@@ -8,6 +8,8 @@ app.use(morgan('tiny'));
 app.use(cors());
 const ID_RANGE = 10_000_000;
 
+const PORT = process.env.PORT || 3001;
+
 let persons = [
     { 
       "id": "1",
@@ -80,4 +82,4 @@ app.get('/info', (req, res) => {
     res.send(htmlPage);
 });
 
-app.listen(3001);
+app.listen(PORT);
