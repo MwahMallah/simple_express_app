@@ -1,3 +1,5 @@
+require('dotenv').config();
+const Person = require('./models/Persons');
 const express = require('express');
 const morgan  = require('morgan');
 const cors = require('cors');
@@ -7,56 +9,41 @@ app.use(express.static('dist'));
 app.use(express.json())
 app.use(morgan('tiny'));
 app.use(cors());
+
 const ID_RANGE = 10_000_000;
-
-const PORT = process.env.PORT || 3001;
-
-let persons = [
-    { 
-      "id": "1",
-      "name": "Arto Hellas", 
-      "number": "040-123456"
-    },
-    { 
-      "id": "2",
-      "name": "Ad Lovelace", 
-      "number": "39-44-5323523"
-    },
-    { 
-      "id": "3",
-      "name": "Dan Abramov", 
-      "number": "12-43-234345"
-    },
-    { 
-      "id": "4",
-      "name": "Mary Poppendieck", 
-      "number": "39-23-6423122"
-    }
-]
+const PORT = process.env.PORT;
 
 app.get('/api/persons', (req, res) => {
-    res.json(persons);
+    Person.find({})
+        .then(persons => res.json(persons));
 });
 
-app.get('/api/persons/:id', (req, res) => {
+app.get('/api/persons/:id', (req, res, next) => {
+    Person.findById(req.params.id)
+        .then(person => {
+            if (person) {
+                res.json(person);
+            } else {
+                res.status(404).end();
+            }
+        })
+        .catch(error => next(error))
+});
+
+app.delete('/api/persons/:id', (req, res, next) => {
     const id = req.params.id;
-    const person = persons.filter(p => p.id === id)[0];
-    if (person) {
-        res.json(person);
-    } else {
-        res.status(404).end();
-    }
+
+    Person.findByIdAndDelete(id)
+        .then(result => {
+            console.log(result);
+            res.status(204).end();
+        })
+        .catch(e => next(e));
 });
 
-app.delete('/api/persons/:id', (req, res) => {
-    const id = req.params.id;
-    persons = persons.filter(p => p.id !== id);
-    console.log(id, persons);
-    res.status(204).end();
-});
-
-app.post('/api/persons', (req, res) => {
+app.post('/api/persons', (req, res, next) => {
     const newPerson = req.body;
+    console.log(newPerson);
 
     if (!newPerson.name) {
         return res.status(400).json({error: "name is not set"});
@@ -66,21 +53,59 @@ app.post('/api/persons', (req, res) => {
         return res.status(400).json({error: "name is not set"});
     }
 
-    if (persons.find(p => p.name === newPerson.name)) {
+    if (!Person.find({name: newPerson.name})) {
         return res.status(400).json({error: `person with name ${newPerson.name} already exists`});
     }
 
-    const newId = Math.floor(Math.random() * ID_RANGE);
-    newPerson.id = newId.toString();
-    persons.push(newPerson);
-    console.log(persons);
-    return res.json(newPerson);
+    const newPersonDb = new Person({
+        name: newPerson.name,
+        number: newPerson.number
+    });
+
+    newPersonDb.save()
+    .then(() => {
+        res.json(newPerson);
+    })
+    .catch(e => next(e))
 });
 
-app.get('/info', (req, res) => {
-    let htmlPage = `<p>Phonebook has info for ${persons.length} people</p>`;
-    htmlPage += new Date().toLocaleString(); 
-    res.send(htmlPage);
+app.put("/api/persons/:id", (req, res, next) => {
+    const body = req.body;
+    const id = req.params.id;
+
+    const updatedPerson = {
+        number: body.number,
+        name: body.name
+    };
+
+    Person.findByIdAndUpdate(id, updatedPerson, {new: true})
+        .then(result => res.json(result))
+        .catch(e => next(e));
 });
+
+app.get('/info', (req, res, next) => {
+    Person.countDocuments({})
+        .then(result => {
+            let htmlPage = `<p>Phonebook has info for ${result} people</p>`;
+            htmlPage += new Date().toLocaleString(); 
+            res.send(htmlPage);
+        })
+        .catch(e => next(e));
+});
+
+
+function errorHandlerMiddleware(error, req, res, next) {
+    console.error(error.message);
+
+    if (error.name === 'CastError') {
+        return res.status(400).send({ error: 'malformatted id' })
+    } if (error.name === 'ValidationError') {
+        return res.status(400).send({error: error.message})
+    }
+
+    next(error);
+}
+
+app.use(errorHandlerMiddleware);
 
 app.listen(PORT);
